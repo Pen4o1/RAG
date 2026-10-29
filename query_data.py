@@ -7,6 +7,8 @@ from google import genai
 from pinecone import Pinecone
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from markdown_blocks import parse_tables
+
 load_dotenv()
 
 INDEX_NAME = "rag-index"
@@ -49,17 +51,22 @@ def query_rag(query_text: str, top_k: int = 5) -> dict:
     matches = []
     for match in results["matches"]:
         metadata = match.get("metadata") or {}
+        text = metadata.get("text", "")
+        tables = parse_tables(text)
         matches.append({
-            "text": metadata.get("text", ""),
+            "text": text,
             "source": metadata.get("source", ""),
             "score": match.get("score"),
             "chunk_index": metadata.get("chunk_index"),
+            "kind": metadata.get("kind") or ("table" if tables else "text"),
+            "tables": tables,
         })
 
     context_str = "\n\n---\n\n".join(match["text"] for match in matches if match["text"])
     sources = sorted({match["source"] for match in matches if match["source"]})
 
     prompt = f"""Answer the question using ONLY the provided context below.
+When a markdown table in the context answers the question, copy that table into the answer as a markdown table. Keep its header row and the relevant rows. Do not rewrite a table as a bullet list.
 
 Context:
 {context_str}
@@ -68,9 +75,20 @@ Question: {query_text}"""
 
     response = generate_response_with_retry(prompt)
 
+    tables = []
+    seen = set()
+    for match in matches:
+        for table in match["tables"]:
+            key = (table["title"], tuple(table["headers"]), tuple(tuple(row) for row in table["rows"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            tables.append(table)
+
     return {
         "answer": response.text or "",
         "sources": sources,
+        "tables": tables,
         "matches": matches,
     }
 

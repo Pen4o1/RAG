@@ -26,16 +26,25 @@ class QueryRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=20)
 
 
+class TableData(BaseModel):
+    title: str = ""
+    headers: list[str]
+    rows: list[list[str]]
+
+
 class Match(BaseModel):
     text: str
     source: str
     score: float | None = None
     chunk_index: int | None = None
+    kind: str = "text"
+    tables: list[TableData] = []
 
 
 class QueryResponse(BaseModel):
     answer: str
     sources: list[str]
+    tables: list[TableData] = []
     matches: list[Match]
 
 
