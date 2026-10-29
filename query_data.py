@@ -26,7 +26,7 @@ def generate_response_with_retry(prompt: str):
         contents=prompt
     )
 
-def query_rag(query_text: str, top_k: int = 5):
+def query_rag(query_text: str, top_k: int = 5) -> dict:
     # 1. Embed query vector locally
     query_vector = model.encode(query_text).tolist()
 
@@ -37,10 +37,18 @@ def query_rag(query_text: str, top_k: int = 5):
         include_metadata=True
     )
 
-    retrieved_chunks = [match["metadata"]["text"] for match in results["matches"]]
-    sources = list(set(match["metadata"]["source"] for match in results["matches"]))
+    matches = []
+    for match in results["matches"]:
+        metadata = match.get("metadata") or {}
+        matches.append({
+            "text": metadata.get("text", ""),
+            "source": metadata.get("source", ""),
+            "score": match.get("score"),
+            "chunk_index": metadata.get("chunk_index"),
+        })
 
-    context_str = "\n\n---\n\n".join(retrieved_chunks)
+    context_str = "\n\n---\n\n".join(match["text"] for match in matches if match["text"])
+    sources = sorted({match["source"] for match in matches if match["source"]})
 
     prompt = f"""Answer the question using ONLY the provided context below.
 
@@ -51,11 +59,11 @@ Question: {query_text}"""
 
     response = generate_response_with_retry(prompt)
 
-    print("\n=== ANSWER ===")
-    print(response.text)
-    print("\n=== SOURCES RETRIEVED FROM PINECONE ===")
-    for src in sources:
-        print(f"- {src}")
+    return {
+        "answer": response.text or "",
+        "sources": sources,
+        "matches": matches,
+    }
 
 if __name__ == "__main__":
     print("Pinecone Cloud RAG Ready! Ask a question (or 'exit' to quit):\n")
@@ -64,5 +72,10 @@ if __name__ == "__main__":
         if user_input.lower() in ["exit", "quit", "q"]:
             break
         if user_input:
-            query_rag(user_input)
+            result = query_rag(user_input)
+            print("\n=== ANSWER ===")
+            print(result["answer"])
+            print("\n=== SOURCES RETRIEVED FROM PINECONE ===")
+            for src in result["sources"]:
+                print(f"- {src}")
             print("\n" + "="*40 + "\n")
