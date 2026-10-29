@@ -1,17 +1,26 @@
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from google import genai
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv()
 
 INDEX_NAME = "rag-index"
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+CACHE_DIR = Path(__file__).resolve().parent / ".cache" / "fastembed"
 
 # Initialize services
 client = genai.Client()
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = TextEmbedding(
+    MODEL_NAME,
+    cache_dir=str(CACHE_DIR),
+    threads=1,
+    providers=["CPUExecutionProvider"],
+)
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index(INDEX_NAME)
 
@@ -28,7 +37,7 @@ def generate_response_with_retry(prompt: str):
 
 def query_rag(query_text: str, top_k: int = 5) -> dict:
     # 1. Embed query vector locally
-    query_vector = model.encode(query_text).tolist()
+    query_vector = next(model.embed([query_text])).tolist()
 
     # 2. Query Pinecone Cloud index
     results = index.query(

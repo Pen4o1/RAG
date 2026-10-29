@@ -1,16 +1,23 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from pinecone import Pinecone, ServerlessSpec
-from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
 INDEX_NAME = "rag-index"
 EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 produces 384-dimensional vectors
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+CACHE_DIR = Path(__file__).resolve().parent / ".cache" / "fastembed"
 
 # 1. Initialize local embedding model & Pinecone client
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = TextEmbedding(
+    MODEL_NAME,
+    cache_dir=str(CACHE_DIR),
+    threads=1,
+    providers=["CPUExecutionProvider"],
+)
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 # 2. Create index if it doesn't exist yet
@@ -58,7 +65,7 @@ def main():
     for doc in documents:
         chunks = chunk_text(doc["content"])
         print(f"Embedding {len(chunks)} chunk(s) from {doc['source']}...")
-        embeddings = model.encode(chunks)
+        embeddings = list(model.embed(chunks))
         
         for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
             vectors_to_upsert.append({
